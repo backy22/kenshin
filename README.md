@@ -10,3 +10,4 @@ backend (api directory)
 python3 main.py
 ```
 
+frontend

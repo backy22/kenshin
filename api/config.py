@@ -7,19 +7,21 @@ from sqlalchemy.sql import text
 from sqlmodel import SQLModel
 from dotenv import load_dotenv
 
-# Load variables from .env file
+# Load environment variables
 load_dotenv()
 
-DB_CONFIG = os.getenv('DB_CONFIG')
-
-
 class DatabaseSession:
-    def __init__(self, url: str = DB_CONFIG):
-        self.engine = create_async_engine(url, echo=True)
+    def __init__(self):
+        # Get DATABASE_URL from environment variables
+        database_url = os.getenv("DATABASE_URL")
+        if not database_url:
+            raise ValueError("DATABASE_URL environment variable is not set")
+        
+        self.engine = create_async_engine(database_url, echo=True)
         self.SessionLocal = sessionmaker(
-            bind=self.engine,
+            self.engine,
             class_=AsyncSession,
-            expire_on_commit=False,
+            expire_on_commit=False
         )
 
     # Generating models into a database

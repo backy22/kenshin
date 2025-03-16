@@ -5,10 +5,10 @@ import strawberry
 
 
 @strawberry.enum
-class Gender(Enum):
-    MAN = 0
-    WOMAN = 1
-    OTHER = 2
+class Gender(str, Enum):
+    MALE = "MALE"
+    FEMALE = "FEMALE"
+    OTHER = "OTHER"
 
 
 @strawberry.type

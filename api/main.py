@@ -3,6 +3,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from config import DatabaseSession
+from database_init import init_database
 
 from Graphql.query import Query
 from Graphql.mutation import Mutation
@@ -20,7 +21,7 @@ def init_app():
 
     @apps.on_event("startup")
     async def startup():
-        await db.create_all()
+        await init_database()
 
     @apps.on_event("shutdown")
     async def shutdown():

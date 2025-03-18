@@ -8,47 +8,44 @@ class UserRepository:
 
     @staticmethod
     async def create(user_data: User):
-        async with db as session:
+        async with db.SessionLocal() as session:
             async with session.begin():
                 session.add(user_data)
-            await db.commit_rollback()
+                await session.commit()
 
     @staticmethod
     async def get_by_id(user_id: int):
-        async with db as session:
+        async with db.SessionLocal() as session:
             stmt = select(User).where(User.id == user_id)
             result = await session.execute(stmt)
-            user = result.scalars().first()
-            return user
+            return result.scalars().first()
 
     @staticmethod
     async def get_all():
-        async with db as session:
+        async with db.SessionLocal() as session:
             query = select(User)
             result = await session.execute(query)
             return result.scalars().all()
 
     @staticmethod
     async def update(user_id: int, user_data: User):
-        async with db as session:
-            stmt = select(User).where(User.id == user_id)
-            result = await session.execute(stmt)
-
-            user = result.scalars().first()
-            user.name = user_data.name
-            user.email = user_data.email
-            user.birthday = user_data.birthday
-            user.gender = user_data.gender
-
-            query = sql_update(User).where(User.id == user_id).values(
-                **user.dict()).execution_options(synchronize_session="fetch")
-
-            await session.execute(query)
-            await db.commit_rollback()
+        async with db.SessionLocal() as session:
+            async with session.begin():
+                stmt = select(User).where(User.id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalars().first()
+                
+                if user:
+                    user.name = user_data.name
+                    user.email = user_data.email
+                    user.birthday = user_data.birthday
+                    user.gender = user_data.gender
+                    await session.commit()
 
     @staticmethod
     async def delete(user_id: int):
-        async with db as session:
-            query = sql_delete(User).where(User.id == user_id)
-            await session.execute(query)
-            await db.commit_rollback()
+        async with db.SessionLocal() as session:
+            async with session.begin():
+                query = sql_delete(User).where(User.id == user_id)
+                await session.execute(query)
+                await session.commit()

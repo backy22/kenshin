@@ -1,6 +1,8 @@
 import strawberry
+from datetime import date, timedelta
 from graphql import GraphQLError
 from strawberry.types import Info
+from typing import List, Optional
 
 from Repository.history import HistoryRepository
 from Repository.test_set import TestSetRepository
@@ -16,6 +18,7 @@ from schema import (
     HistoryType,
     ItemInput,
     ItemType,
+    RecommendationApplyInput,
     ScreeningRuleInput,
     ScreeningRuleType,
     TestSetInput,
@@ -148,3 +151,52 @@ class Mutation:
     async def delete_screening_rule(self, info: Info, rule_id: int) -> str:
         require_admin(info)
         return await ScreeningRuleService.delete(rule_id)
+
+    @strawberry.mutation
+    async def create_personal_item(
+        self,
+        info: Info,
+        name: str,
+        default_frequency: int,
+        where_guidance_en: Optional[str] = None,
+    ) -> ItemType:
+        user_id, _role = require_auth(info)
+        try:
+            row = await ItemService.upsert_personal_item(
+                user_id, name, default_frequency, where_guidance_en
+            )
+        except ValueError as e:
+            raise GraphQLError(str(e)) from e
+        return ItemService.to_type(row)
+
+    @strawberry.mutation
+    async def apply_recommendations(
+        self, info: Info, user_id: int, rows: List[RecommendationApplyInput]
+    ) -> List[TestSetType]:
+        actor_id, role = require_auth(info)
+        if not is_admin(role) and user_id != actor_id:
+            raise GraphQLError("Forbidden")
+        if not rows:
+            raise GraphQLError("No recommendations selected")
+        out: List[TestSetType] = []
+        for row in rows:
+            where = row.where_guidance_en
+            if not where and row.frequency_text:
+                where = row.frequency_text
+            try:
+                item = await ItemService.upsert_personal_item(
+                    user_id, row.name, row.interval_days, where
+                )
+            except ValueError as e:
+                raise GraphQLError(str(e)) from e
+            fd = max(1, min(int(row.interval_days), 3650))
+            next_d = date.today() + timedelta(days=fd)
+            ts = TestSetInput(
+                user_id=user_id,
+                item_id=item.id,
+                frequency=fd,
+                next_date=next_d,
+                reminder_lead_days=14,
+            )
+            out.append(await TestSetService.add_test_set(ts))
+        return out

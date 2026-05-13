@@ -100,12 +100,16 @@ kenshin/
 
 ## Environment variables
 
+See [`.env.example`](.env.example) for copy-paste placeholders. Copy it to `.env` at the repo root when running locally (values are also mirrored in `docker-compose.yml` for the API service where applicable).
+
 ### API (set in `docker-compose.yml` or your host)
 
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | Async SQLAlchemy URL (e.g. `postgresql+asyncpg://…`) |
 | `JWT_SECRET` | Secret for signing JWTs (change in production) |
+| `GEMINI_API_KEY` | Google AI Studio key for **regional screening suggestions** (`recommendCheckups`). If unset, the query fails until you configure a key. |
+| `GEMINI_MODEL` | Optional Gemini model id (default `gemini-2.0-flash`). |
 | `KENSHIN_SYNC_DEV_ADMIN` | If `1` / `true`, each API startup resets `admin@example.com` to password `password` and role `ADMIN`. **Disable in production.** Enabled in `docker-compose.yml` for local development. |
 
 ### Remix (frontend)

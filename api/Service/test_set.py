@@ -5,6 +5,7 @@ from Repository.test_set import TestSetRepository
 from Repository.user import UserRepository
 from Service.item import ItemService
 from Service.user import UserService
+from graphql import GraphQLError
 from schema import HistoryType, TestSetInput, TestSetType
 
 
@@ -44,6 +45,11 @@ class TestSetService:
 
     @staticmethod
     async def add_test_set(test_set_data: TestSetInput):
+        item = await ItemRepository.get_by_id(test_set_data.item_id)
+        if not item:
+            raise GraphQLError("Item not found")
+        if item.owner_user_id is not None and item.owner_user_id != test_set_data.user_id:
+            raise GraphQLError("This item is not available for the selected user")
         test_set = TestSet()
         test_set.user_id = test_set_data.user_id
         test_set.item_id = test_set_data.item_id
@@ -77,6 +83,11 @@ class TestSetService:
 
     @staticmethod
     async def update(test_set_id: int, test_set_data: TestSetInput):
+        item = await ItemRepository.get_by_id(test_set_data.item_id)
+        if not item:
+            raise GraphQLError("Item not found")
+        if item.owner_user_id is not None and item.owner_user_id != test_set_data.user_id:
+            raise GraphQLError("This item is not available for the selected user")
         test_set = TestSet()
         test_set.user_id = test_set_data.user_id
         test_set.item_id = test_set_data.item_id

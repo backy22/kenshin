@@ -47,6 +47,7 @@ class UserRepository:
                     user.email = user_data.email
                     user.birthday = user_data.birthday
                     user.gender = user_data.gender
+                    user.location = getattr(user_data, "location", None)
                     await session.commit()
 
     @staticmethod

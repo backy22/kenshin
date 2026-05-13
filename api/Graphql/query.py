@@ -5,6 +5,7 @@ import strawberry
 from graphql import GraphQLError
 from strawberry.types import Info
 
+from Repository.item import ItemRepository
 from Repository.test_set import TestSetRepository
 from Repository.user import UserRepository
 from Service.history import HistoryService
@@ -13,7 +14,7 @@ from Service.screening_rule import GuidelineService, ScreeningRuleService
 from Service.test_set import TestSetService
 from Service.user import UserService
 from auth_permissions import auth_from_info, is_admin, require_admin, require_auth
-from schema import HistoryType, ItemType, ScreeningRuleType, TestSetType, UserType
+from schema import HistoryType, ItemType, ScreeningRecommendationType, ScreeningRuleType, TestSetType, UserType
 
 
 @strawberry.type
@@ -60,13 +61,19 @@ class Query:
 
     @strawberry.field
     async def get_all_items(self, info: Info) -> List[ItemType]:
-        require_auth(info)
-        return await ItemService.get_all_item()
+        user_id, role = require_auth(info)
+        return await ItemService.get_all_for_actor(user_id, is_admin(role))
 
     @strawberry.field
     async def get_item_by_id(self, info: Info, id: int) -> ItemType:
-        require_auth(info)
-        return await ItemService.get_by_id(id)
+        user_id, role = require_auth(info)
+        item = await ItemRepository.get_by_id(id)
+        if not item:
+            raise GraphQLError("Item not found")
+        if not is_admin(role):
+            if item.owner_user_id is not None and item.owner_user_id != user_id:
+                raise GraphQLError("Forbidden")
+        return ItemService.to_type(item)
 
     @strawberry.field
     async def get_all_histories(self, info: Info) -> List[HistoryType]:
@@ -90,6 +97,11 @@ class Query:
     async def suggest_screening_interval(self, info: Info, user_id: int, item_id: int) -> int:
         actor_id, role = require_auth(info)
         if not is_admin(role) and user_id != actor_id:
+            raise GraphQLError("Forbidden")
+        item = await ItemRepository.get_by_id(item_id)
+        if not item:
+            raise GraphQLError("Item not found")
+        if item.owner_user_id is not None and item.owner_user_id != user_id:
             raise GraphQLError("Forbidden")
         return await GuidelineService.suggest_interval_days(user_id, item_id)
 
@@ -119,3 +131,26 @@ class Query:
     async def screening_rules(self, info: Info) -> List[ScreeningRuleType]:
         require_admin(info)
         return await ScreeningRuleService.list_all()
+
+    @strawberry.field
+    async def recommend_checkups(
+        self,
+        info: Info,
+        location_override: Optional[str] = None,
+        for_user_id: Optional[int] = None,
+    ) -> List[ScreeningRecommendationType]:
+        actor_id, role = require_auth(info)
+        target_id = for_user_id if for_user_id is not None else actor_id
+        if not is_admin(role) and target_id != actor_id:
+            raise GraphQLError("Forbidden")
+        user = await UserRepository.get_by_id(target_id)
+        if not user:
+            raise GraphQLError("User not found")
+        try:
+            from gemini_recommendations import fetch_recommendations_for_user
+
+            return await fetch_recommendations_for_user(user, location_override)
+        except RuntimeError as e:
+            raise GraphQLError(str(e)) from e
+        except Exception as e:
+            raise GraphQLError(f"Recommendations failed: {e}") from e

@@ -20,6 +20,7 @@ class UserType:
     birthday: date
     gender: Gender
     role: str
+    location: Optional[str]
 
 
 @strawberry.type
@@ -66,6 +67,14 @@ class ScreeningRuleType:
     priority: int
 
 
+@strawberry.type
+class ScreeningRecommendationType:
+    name: str
+    frequency_text: str
+    interval_days: int
+    rationale: Optional[str] = None
+
+
 @strawberry.input
 class TestSetInput:
     user_id: int
@@ -82,6 +91,15 @@ class UserInput:
     birthday: date
     gender: Gender
     initial_password: Optional[str] = None
+    location: Optional[str] = None
+
+
+@strawberry.input
+class RecommendationApplyInput:
+    name: str
+    interval_days: int
+    frequency_text: Optional[str] = None
+    where_guidance_en: Optional[str] = None
 
 
 @strawberry.input

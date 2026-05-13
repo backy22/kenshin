@@ -13,6 +13,7 @@ class Item(SQLModel, table=True):
     name_key: str = Field(default="item.unknown")
     where_guidance_en: Optional[str] = Field(default=None, nullable=True)
     default_frequency: int
+    owner_user_id: Optional[int] = Field(default=None, foreign_key="user.id", nullable=True)
 
     test_sets: List["TestSet"] = Relationship(back_populates="item")
     screening_rules: List["ScreeningRule"] = Relationship(back_populates="item")

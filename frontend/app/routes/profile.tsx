@@ -17,9 +17,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const token = await readAuthToken(request);
   if (!token) throw redirect('/login');
   const data = await gqlRequest<{
-    me: { id: number; name: string; email: string; birthday: string; gender: string; role: string } | null;
+    me: {
+      id: number;
+      name: string;
+      email: string;
+      birthday: string;
+      gender: string;
+      role: string;
+      location: string | null;
+    } | null;
   }>(
-    `query { me { id name email birthday gender role } }`,
+    `query { me { id name email birthday gender role location } }`,
     undefined,
     token
   );
@@ -48,6 +56,10 @@ export async function action({ request }: ActionFunctionArgs) {
         email: String(form.get('email') ?? ''),
         birthday: String(form.get('birthday') ?? ''),
         gender: String(form.get('gender') ?? 'OTHER'),
+        location: (() => {
+          const v = String(form.get('location') ?? '').trim();
+          return v.length > 0 ? v : null;
+        })(),
       },
     },
     token
@@ -119,6 +131,20 @@ export default function ProfileRoute() {
             <option value="MALE">MALE</option>
             <option value="OTHER">OTHER</option>
           </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700" htmlFor="location">
+            {t(locale, 'locationLabel')}
+          </label>
+          <input
+            id="location"
+            name="location"
+            type="text"
+            defaultValue={me.location ?? ''}
+            placeholder={t(locale, 'locationPlaceholder')}
+            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          />
+          <p className="mt-1 text-xs text-gray-500">{t(locale, 'locationHint')}</p>
         </div>
         <button
           type="submit"

@@ -15,6 +15,7 @@ class UserService:
             birthday=user.birthday,
             gender=user.gender,
             role=user.role or "USER",
+            location=getattr(user, "location", None),
         )
 
     @staticmethod
@@ -52,6 +53,8 @@ class UserService:
         user.email = user_data.email
         user.birthday = user_data.birthday
         user.gender = user_data.gender
+        loc = user_data.location
+        user.location = None if loc is None else (loc.strip() or None)
         await UserRepository.update(user_id, user)
 
         return f'Successfully updated data by id {user_id}'

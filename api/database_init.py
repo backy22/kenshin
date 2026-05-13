@@ -133,6 +133,8 @@ async def ensure_migrations():
         "ALTER TABLE item ADD COLUMN IF NOT EXISTS where_guidance_en TEXT",
         "ALTER TABLE test_set ADD COLUMN IF NOT EXISTS reminder_lead_days INTEGER DEFAULT 14",
         "ALTER TABLE test_set ADD COLUMN IF NOT EXISTS last_reminder_at DATE",
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS location VARCHAR(512)',
+        'ALTER TABLE item ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES "user"(id)',
     ]
     async with db.engine.begin() as conn:
         for stmt in statements:

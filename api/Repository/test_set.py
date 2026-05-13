@@ -11,7 +11,7 @@ class TestSetRepository:
         async with db.SessionLocal() as session:
             async with session.begin():
                 session.add(test_set_data)
-                await session.commit()
+                await session.flush()
 
     @staticmethod
     async def get_by_id(test_set_id: int):
@@ -19,6 +19,13 @@ class TestSetRepository:
             stmt = select(TestSet).where(TestSet.id == test_set_id)
             result = await session.execute(stmt)
             return result.scalars().first()
+
+    @staticmethod
+    async def get_all_by_user_id(user_id: int):
+        async with db.SessionLocal() as session:
+            stmt = select(TestSet).where(TestSet.user_id == user_id)
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     @staticmethod
     async def get_all():
@@ -40,6 +47,29 @@ class TestSetRepository:
                     test_set.item_id = test_set_data.item_id
                     test_set.frequency = test_set_data.frequency
                     test_set.next_date = test_set_data.next_date
+                    test_set.reminder_lead_days = test_set_data.reminder_lead_days
+                    await session.commit()
+
+    @staticmethod
+    async def touch_last_reminder(test_set_id: int, on_date) -> None:
+        async with db.SessionLocal() as session:
+            async with session.begin():
+                stmt = select(TestSet).where(TestSet.id == test_set_id)
+                result = await session.execute(stmt)
+                test_set = result.scalars().first()
+                if test_set:
+                    test_set.last_reminder_at = on_date
+                    await session.commit()
+
+    @staticmethod
+    async def update_next_date(test_set_id: int, next_date) -> None:
+        async with db.SessionLocal() as session:
+            async with session.begin():
+                stmt = select(TestSet).where(TestSet.id == test_set_id)
+                result = await session.execute(stmt)
+                test_set = result.scalars().first()
+                if test_set:
+                    test_set.next_date = next_date
                     await session.commit()
 
     @staticmethod

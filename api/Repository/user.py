@@ -21,6 +21,13 @@ class UserRepository:
             return result.scalars().first()
 
     @staticmethod
+    async def get_by_email(email: str):
+        async with db.SessionLocal() as session:
+            stmt = select(User).where(User.email == email)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+
+    @staticmethod
     async def get_all():
         async with db.SessionLocal() as session:
             query = select(User)
@@ -40,6 +47,17 @@ class UserRepository:
                     user.email = user_data.email
                     user.birthday = user_data.birthday
                     user.gender = user_data.gender
+                    await session.commit()
+
+    @staticmethod
+    async def set_role(user_id: int, role: str):
+        async with db.SessionLocal() as session:
+            async with session.begin():
+                stmt = select(User).where(User.id == user_id)
+                result = await session.execute(stmt)
+                user = result.scalars().first()
+                if user:
+                    user.role = role
                     await session.commit()
 
     @staticmethod

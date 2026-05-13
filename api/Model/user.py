@@ -16,6 +16,8 @@ class User(SQLModel, table=True):
     email: str
     birthday: date
     gender: Gender = Field(sa_column=SQLAlchemyEnum(Gender, name="gender", create_constraint=True, native_enum=True, values_callable=lambda obj: [e.value for e in obj]))
+    password_hash: Optional[str] = Field(default=None, nullable=True)
+    role: str = Field(default="USER", max_length=20)
 
     histories: List["History"] = Relationship(back_populates="user")
     test_sets: List["TestSet"] = Relationship(back_populates="user")

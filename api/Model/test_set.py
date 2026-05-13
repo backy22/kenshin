@@ -6,12 +6,15 @@ if TYPE_CHECKING:
     from Model.user import User
     from Model.history import History
 
+
 class TestSet(SQLModel, table=True):
     __tablename__ = "test_set"
 
     id: Optional[int] = Field(None, primary_key=True, nullable=False)
-    frequency:  int
+    frequency: int
     next_date: date
+    reminder_lead_days: int = Field(default=14)
+    last_reminder_at: Optional[date] = Field(default=None, nullable=True)
     item_id: Optional[int] = Field(default=None, foreign_key="item.id", nullable=False)
     user_id: Optional[int] = Field(default=None, foreign_key="user.id", nullable=False)
 

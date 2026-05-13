@@ -1,6 +1,7 @@
 from datetime import date
 from enum import Enum
-from typing import List
+from typing import List, Optional
+
 import strawberry
 
 
@@ -18,12 +19,15 @@ class UserType:
     email: str
     birthday: date
     gender: Gender
+    role: str
 
 
 @strawberry.type
 class ItemType:
     id: int
     name: str
+    name_key: str
+    where_guidance_en: Optional[str]
     default_frequency: int
 
 
@@ -44,8 +48,22 @@ class TestSetType:
     item_id: int
     frequency: int
     next_date: date
+    reminder_lead_days: int
+    last_reminder_at: Optional[date]
     user: UserType
+    item: ItemType
     histories: List[HistoryType]
+
+
+@strawberry.type
+class ScreeningRuleType:
+    id: int
+    item_id: int
+    min_age: Optional[int]
+    max_age: Optional[int]
+    applies_gender: str
+    interval_days: int
+    priority: int
 
 
 @strawberry.input
@@ -54,6 +72,7 @@ class TestSetInput:
     item_id: int
     frequency: int
     next_date: date
+    reminder_lead_days: Optional[int] = 14
 
 
 @strawberry.input
@@ -62,11 +81,14 @@ class UserInput:
     email: str
     birthday: date
     gender: Gender
+    initial_password: Optional[str] = None
 
 
 @strawberry.input
 class ItemInput:
     name: str
+    name_key: str
+    where_guidance_en: Optional[str] = None
     default_frequency: int
 
 
@@ -77,3 +99,13 @@ class HistoryInput:
     clinic: str
     result: str
     test_set_id: int
+
+
+@strawberry.input
+class ScreeningRuleInput:
+    item_id: int
+    min_age: Optional[int] = None
+    max_age: Optional[int] = None
+    applies_gender: str = "ALL"
+    interval_days: int
+    priority: int = 0

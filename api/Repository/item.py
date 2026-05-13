@@ -37,6 +37,8 @@ class ItemRepository:
                 
                 if item:
                     item.name = item_data.name
+                    item.name_key = item_data.name_key
+                    item.where_guidance_en = item_data.where_guidance_en
                     item.default_frequency = item_data.default_frequency
                     await session.commit()
 

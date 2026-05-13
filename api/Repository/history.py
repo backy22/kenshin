@@ -11,6 +11,7 @@ class HistoryRepository:
         async with db as session:
             async with session.begin():
                 session.add(history_data)
+                await session.flush()
             await db.commit_rollback()
 
     @staticmethod
@@ -28,6 +29,12 @@ class HistoryRepository:
             result = await session.execute(query)
             return result.scalars().all()
 
+    @staticmethod
+    async def get_all_by_user_id(user_id: int):
+        async with db as session:
+            stmt = select(History).where(History.user_id == user_id)
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     @staticmethod
     async def get_all_by_test_set_id(test_set_id: int):
@@ -44,16 +51,20 @@ class HistoryRepository:
             result = await session.execute(stmt)
 
             history = result.scalars().first()
-            history.user_id = history_data.user_id
-            history.date = history_data.date
-            history.clinic = history_data.clinic
-            history.result = history_data.result
-            history.test_set_id = history_data.test_set_id
+            if not history:
+                return
 
-            query = sql_update(History).where(History.id == history_id).values(
-                **history.dict()).execution_options(synchronize_session="fetch")
-
-            await session.execute(query)
+            await session.execute(
+                sql_update(History)
+                .where(History.id == history_id)
+                .values(
+                    user_id=history_data.user_id,
+                    date=history_data.date,
+                    clinic=history_data.clinic,
+                    result=history_data.result,
+                    test_set_id=history_data.test_set_id,
+                )
+            )
             await db.commit_rollback()
 
     @staticmethod

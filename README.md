@@ -106,6 +106,7 @@ kenshin/
 |----------|---------|
 | `DATABASE_URL` | Async SQLAlchemy URL (e.g. `postgresql+asyncpg://…`) |
 | `JWT_SECRET` | Secret for signing JWTs (change in production) |
+| `KENSHIN_SYNC_DEV_ADMIN` | If `1` / `true`, each API startup resets `admin@example.com` to password `password` and role `ADMIN`. **Disable in production.** Enabled in `docker-compose.yml` for local development. |
 
 ### Remix (frontend)
 
@@ -117,6 +118,14 @@ kenshin/
 ### Postgres (Compose service `db`)
 
 `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` are defined in `docker-compose.yml`.
+
+### If admin login fails
+
+Use **`admin@example.com`** / **`password`**.
+
+1. **Restart the API** (with Docker Compose as committed): `KENSHIN_SYNC_DEV_ADMIN=1` reapplies that password on every boot.
+2. **Incremental seed:** missing seed users (including admin) are added on startup without wiping the database.
+3. **Full reset:** `docker compose down -v` then `docker compose up --build` removes all Postgres data and reseeds everything.
 
 ## GraphQL and auth
 
@@ -173,6 +182,3 @@ mutation {
 }
 ```
 
-## Gender values
-
-`MALE`, `FEMALE`, and `OTHER` are used in the API and forms.

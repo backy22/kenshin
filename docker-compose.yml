@@ -28,6 +28,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/fastapi_db
       - JWT_SECRET=dev-jwt-secret-change-in-production
+      - KENSHIN_SYNC_DEV_ADMIN=1
     ports:
       - "8000:8000"
     depends_on:

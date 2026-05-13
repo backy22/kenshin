@@ -39,7 +39,11 @@ class HistoryRepository:
     @staticmethod
     async def get_all_by_test_set_id(test_set_id: int):
         async with db as session:
-            stmt = select(History).where(History.test_set_id == test_set_id)
+            stmt = (
+                select(History)
+                .where(History.test_set_id == test_set_id)
+                .order_by(History.date.desc())
+            )
             result = await session.execute(stmt)
             return result.scalars().all()
 

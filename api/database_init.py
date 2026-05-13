@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import date
 
 from sqlalchemy import text
@@ -11,6 +12,7 @@ from Model.item import Item
 from Model.screening_rule import ScreeningRule
 from Model.test_set import TestSet  # noqa: F401
 from Model.user import User
+from Repository.user import UserRepository
 from schema import Gender
 
 DEV_PASSWORD_HASH = hash_password("password")
@@ -151,6 +153,8 @@ async def init_database():
         await ensure_migrations()
 
         await seed_users()
+        if _env_truthy("KENSHIN_SYNC_DEV_ADMIN"):
+            await sync_dev_admin_password()
         await seed_items()
         await seed_screening_rules()
 
@@ -160,25 +164,55 @@ async def init_database():
         raise
 
 
+def _env_truthy(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
 async def seed_users():
+    """Insert any seed user whose email is not already present (idempotent)."""
     try:
+        added = 0
         async with db.SessionLocal() as session:
-            result = await session.execute(text('SELECT COUNT(*) FROM "user"'))
-            count = result.scalar()
-
-            if count > 0:
-                print("Users already exist in the database. Skipping user seeding.")
-                return
-
-            for user in INITIAL_USERS:
-                session.add(user)
-
+            for template in INITIAL_USERS:
+                result = await session.execute(
+                    select(User).where(User.email == template.email)
+                )
+                if result.scalars().first() is not None:
+                    continue
+                session.add(
+                    User(
+                        name=template.name,
+                        email=template.email,
+                        birthday=template.birthday,
+                        gender=template.gender,
+                        password_hash=DEV_PASSWORD_HASH,
+                        role=template.role,
+                    )
+                )
+                added += 1
             await session.commit()
-            print("Successfully seeded users to the database.")
+        if added:
+            print(f"Seeded {added} new user(s) (skipped emails that already exist).")
+        else:
+            print("User seed skipped: all seed emails already exist.")
 
     except Exception as e:
         print(f"Error seeding users: {str(e)}")
         raise
+
+
+async def sync_dev_admin_password() -> None:
+    """Reset dev admin password and role when KENSHIN_SYNC_DEV_ADMIN is enabled."""
+    ok = await UserRepository.update_password_hash_and_role_by_email(
+        "admin@example.com", DEV_PASSWORD_HASH, "ADMIN"
+    )
+    if ok:
+        print("Dev admin (admin@example.com) password and role synchronized.")
+    else:
+        print(
+            "KENSHIN_SYNC_DEV_ADMIN is set but admin@example.com is missing; "
+            "it will be created on the next user seed if listed in INITIAL_USERS."
+        )
 
 
 async def seed_items():

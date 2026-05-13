@@ -23,14 +23,18 @@ class TestSetRepository:
     @staticmethod
     async def get_all_by_user_id(user_id: int):
         async with db.SessionLocal() as session:
-            stmt = select(TestSet).where(TestSet.user_id == user_id)
+            stmt = (
+                select(TestSet)
+                .where(TestSet.user_id == user_id)
+                .order_by(TestSet.next_date.asc())
+            )
             result = await session.execute(stmt)
             return result.scalars().all()
 
     @staticmethod
     async def get_all():
         async with db.SessionLocal() as session:
-            query = select(TestSet)
+            query = select(TestSet).order_by(TestSet.next_date.asc())
             result = await session.execute(query)
             return result.scalars().all()
 

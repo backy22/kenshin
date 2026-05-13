@@ -61,6 +61,21 @@ class UserRepository:
                     await session.commit()
 
     @staticmethod
+    async def update_password_hash_and_role_by_email(
+        email: str, password_hash: str, role: str
+    ) -> bool:
+        async with db.SessionLocal() as session:
+            async with session.begin():
+                stmt = select(User).where(User.email == email)
+                result = await session.execute(stmt)
+                user = result.scalars().first()
+                if not user:
+                    return False
+                user.password_hash = password_hash
+                user.role = role
+                return True
+
+    @staticmethod
     async def delete(user_id: int):
         async with db.SessionLocal() as session:
             async with session.begin():

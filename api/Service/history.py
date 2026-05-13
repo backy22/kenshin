@@ -1,7 +1,6 @@
 from datetime import date, timedelta
 
 from Model.history import History
-from Model.test_set import TestSet
 from Repository.history import HistoryRepository
 from Repository.test_set import TestSetRepository
 from schema import HistoryInput, HistoryType
@@ -18,6 +17,19 @@ def _to_history_type(history: History) -> HistoryType:
     )
 
 
+async def _refresh_next_date_from_histories(test_set_id: int) -> None:
+    """Set next_date to latest visit date + schedule frequency."""
+    test_set = await TestSetRepository.get_by_id(test_set_id)
+    if not test_set:
+        return
+    histories = await HistoryRepository.get_all_by_test_set_id(test_set_id)
+    if not histories:
+        return
+    latest = max(h.date for h in histories)
+    next_d = latest + timedelta(days=test_set.frequency)
+    await TestSetRepository.update_next_date(test_set.id, next_d)
+
+
 class HistoryService:
 
     @staticmethod
@@ -30,10 +42,7 @@ class HistoryService:
         history.test_set_id = history_data.test_set_id
         await HistoryRepository.create(history)
 
-        test_set = await TestSetRepository.get_by_id(history.test_set_id)
-        if test_set:
-            next_d = history.date + timedelta(days=test_set.frequency)
-            await TestSetRepository.update_next_date(test_set.id, next_d)
+        await _refresh_next_date_from_histories(history.test_set_id)
 
         return _to_history_type(history)
 
@@ -54,7 +63,12 @@ class HistoryService:
 
     @staticmethod
     async def delete(history_id: int):
+        h = await HistoryRepository.get_by_id(history_id)
+        if not h:
+            return f'History {history_id} not found'
+        test_set_id = h.test_set_id
         await HistoryRepository.delete(history_id)
+        await _refresh_next_date_from_histories(test_set_id)
         return f'Successfully deleted data by id {history_id}'
 
     @staticmethod
@@ -66,5 +80,7 @@ class HistoryService:
         history.result = history_data.result
         history.test_set_id = history_data.test_set_id
         await HistoryRepository.update(history_id, history)
+
+        await _refresh_next_date_from_histories(history_data.test_set_id)
 
         return f'Successfully updated data by id {history_id}'

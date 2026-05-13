@@ -29,13 +29,37 @@ interface Item {
 
 interface TestSet {
   id: number;
-  frequency: number;
   nextDate: string;
   reminderLeadDays: number;
-  lastReminderAt: string | null;
   user: User;
   item: Item;
   histories: History[];
+}
+
+/** Local calendar day at midnight (avoids UTC shift on YYYY-MM-DD strings). */
+function parseLocalDateOnly(iso: string): Date {
+  const part = iso.split('T')[0] ?? iso;
+  const [y, m, d] = part.split('-').map(Number);
+  if (!y || !m || !d) return new Date(iso);
+  return new Date(y, m - 1, d);
+}
+
+function startOfLocalDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/** Matches api/reminders_job.py: window_start <= today <= next_date. */
+function scheduleAttention(nextDateIso: string, reminderLeadDays: number): 'none' | 'reminder' | 'overdue' {
+  const next = startOfLocalDay(parseLocalDateOnly(nextDateIso));
+  const today = startOfLocalDay(new Date());
+  if (today > next) return 'overdue';
+  const lead = Math.max(0, reminderLeadDays);
+  const windowStart = new Date(next);
+  windowStart.setDate(windowStart.getDate() - lead);
+  if (windowStart <= today && today <= next) return 'reminder';
+  return 'none';
 }
 
 interface ReminderRow {
@@ -58,10 +82,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
     query {
       getAllTestSets {
         id
-        frequency
         nextDate
         reminderLeadDays
-        lastReminderAt
         user {
           id
           name
@@ -140,27 +162,35 @@ export default function Index() {
           </Link>
         </div>
         <div className="divide-y divide-gray-200 rounded-lg border border-gray-200 bg-white shadow-sm">
-          {getAllTestSets.map((testSet) => (
-            <div key={testSet.id} className="p-6">
+          {getAllTestSets.map((testSet) => {
+            const attention = scheduleAttention(testSet.nextDate, testSet.reminderLeadDays);
+            const cardClass =
+              attention === 'reminder'
+                ? 'border-l-4 border-l-amber-400 bg-amber-50/50 pl-5'
+                : attention === 'overdue'
+                  ? 'border-l-4 border-l-rose-500 bg-rose-50/50 pl-5'
+                  : '';
+            return (
+            <div key={testSet.id} className={`p-6 ${cardClass}`.trim()}>
               <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-medium uppercase tracking-wide text-indigo-600">
-                    {testSet.item.name}
-                  </p>
-                  <h2 className="text-lg font-medium text-gray-900">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-medium uppercase tracking-wide text-indigo-600">
+                      {testSet.item.name}
+                    </p>
+                    {attention === 'reminder' ? (
+                      <span className="inline-flex items-center rounded-full bg-amber-200/80 px-2 py-0.5 text-xs font-semibold text-amber-950">
+                        {t(locale, 'scheduleBadgeReminder')}
+                      </span>
+                    ) : attention === 'overdue' ? (
+                      <span className="inline-flex items-center rounded-full bg-rose-200/80 px-2 py-0.5 text-xs font-semibold text-rose-950">
+                        {t(locale, 'scheduleBadgeOverdue')}
+                      </span>
+                    ) : null}
+                  </div>
+                  <h2 className="mt-2 text-lg font-medium text-gray-900">
                     {t(locale, 'nextCheckup')}: {new Date(testSet.nextDate).toLocaleDateString()}
                   </h2>
-                  <p className="text-sm text-gray-500">
-                    {t(locale, 'frequencyDays', { days: testSet.frequency })}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {t(locale, 'reminderLead', { days: testSet.reminderLeadDays })}
-                  </p>
-                  {testSet.lastReminderAt ? (
-                    <p className="text-xs text-gray-400">
-                      {t(locale, 'lastReminder')}: {new Date(testSet.lastReminderAt).toLocaleDateString()}
-                    </p>
-                  ) : null}
                   {testSet.item.whereGuidanceEn ? (
                     <p className="mt-2 max-w-2xl text-sm text-gray-600">
                       <span className="font-medium text-gray-700">{t(locale, 'whereTypical')}: </span>
@@ -171,6 +201,12 @@ export default function Index() {
                 <div className="text-right text-sm">
                   <p className="font-medium text-gray-900">{testSet.user.name}</p>
                   <p className="text-gray-500">{testSet.user.email}</p>
+                  <Link
+                    to={`/test-sets/${testSet.id}`}
+                    className="mt-2 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-800"
+                  >
+                    {t(locale, 'editCard')}
+                  </Link>
                 </div>
               </div>
 
@@ -181,25 +217,13 @@ export default function Index() {
                     <ul className="divide-y divide-gray-200">
                       {testSet.histories.map((history) => (
                         <li key={history.id} className="px-4 py-3">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium text-gray-900">
-                                {new Date(history.date).toLocaleDateString()}
-                              </p>
-                              <p className="text-sm text-gray-500">{history.clinic}</p>
-                            </div>
-                            <div className="text-sm">
-                              <span
-                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                  history.result === 'Normal'
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-yellow-100 text-yellow-800'
-                                }`}
-                              >
-                                {history.result}
-                              </span>
-                            </div>
-                          </div>
+                          <p className="text-sm font-medium text-gray-900">
+                            {new Date(history.date).toLocaleDateString()}
+                          </p>
+                          <p className="text-sm text-gray-500">{history.clinic}</p>
+                          <p className="mt-1 text-sm text-gray-700 whitespace-pre-wrap break-words">
+                            {history.result}
+                          </p>
                         </li>
                       ))}
                     </ul>
@@ -209,7 +233,8 @@ export default function Index() {
                 <p className="text-sm text-gray-500">{t(locale, 'noHistory')}</p>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

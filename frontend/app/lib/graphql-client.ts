@@ -21,6 +21,11 @@ export async function gqlRequest<T>(
     }),
   });
 
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`GraphQL HTTP ${response.status}: ${text.slice(0, 400)}`);
+  }
+
   const json = await response.json();
 
   if (json.errors) {

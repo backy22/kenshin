@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import os
 from contextlib import asynccontextmanager
 
 import strawberry
@@ -13,6 +15,21 @@ from Graphql.query import Query
 from reminders_job import start_reminder_worker
 from routers.auth import router as auth_router
 from strawberry.fastapi import GraphQLRouter
+
+
+def _ensure_kenshin_logging() -> None:
+    """Application logs under the ``kenshin`` logger (see gemini / GraphQL)."""
+    log = logging.getLogger("kenshin")
+    if log.handlers:
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    log.addHandler(handler)
+    log.setLevel(getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO))
+    log.propagate = False
+
+
+_ensure_kenshin_logging()
 
 
 @asynccontextmanager

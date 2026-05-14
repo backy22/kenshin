@@ -1,25 +1,16 @@
 import { cssBundleHref } from '@remix-run/css-bundle';
 import type { LinksFunction, LoaderFunctionArgs } from '@remix-run/node';
 import { json } from '@remix-run/node';
-import {
-  Links,
-  LiveReload,
-  Meta,
-  Outlet,
-  Scripts,
-  ScrollRestoration,
-  Link,
-  useLoaderData,
-} from '@remix-run/react';
+import { Links, Meta, Outlet, Scripts, ScrollRestoration, Link, useLoaderData } from '@remix-run/react';
 import { gqlRequest } from './lib/graphql-client';
 import { readAuthToken } from './session.server';
 import type { Locale } from './i18n';
 import { t } from './i18n';
-import styles from './styles/tailwind.css';
+import tailwindHref from './styles/tailwind.css?url';
 
 export const links: LinksFunction = () => [
   ...(cssBundleHref ? [{ rel: 'stylesheet', href: cssBundleHref }] : []),
-  { rel: 'stylesheet', href: styles },
+  { rel: 'stylesheet', href: tailwindHref },
 ];
 
 function getLocale(request: Request): Locale {
@@ -102,7 +93,6 @@ export default function App() {
         <Outlet context={{ locale }} />
         <ScrollRestoration />
         <Scripts />
-        <LiveReload />
       </body>
     </html>
   );

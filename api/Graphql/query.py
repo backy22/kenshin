@@ -1,3 +1,4 @@
+import logging
 from datetime import date, timedelta
 from typing import List, Optional
 
@@ -15,6 +16,8 @@ from Service.test_set import TestSetService
 from Service.user import UserService
 from auth_permissions import auth_from_info, is_admin, require_admin, require_auth
 from schema import HistoryType, ItemType, ScreeningRecommendationType, ScreeningRuleType, TestSetType, UserType
+
+logger = logging.getLogger("kenshin.graphql")
 
 
 @strawberry.type
@@ -146,11 +149,21 @@ class Query:
         user = await UserRepository.get_by_id(target_id)
         if not user:
             raise GraphQLError("User not found")
+        logger.info(
+            "recommend_checkups actor_id=%s target_id=%s location_override_len=%s",
+            actor_id,
+            target_id,
+            len((location_override or "").strip()),
+        )
         try:
             from gemini_recommendations import fetch_recommendations_for_user
 
-            return await fetch_recommendations_for_user(user, location_override)
+            out = await fetch_recommendations_for_user(user, location_override)
+            logger.info("recommend_checkups ok count=%s", len(out))
+            return out
         except RuntimeError as e:
+            logger.warning("recommend_checkups runtime error: %s", e)
             raise GraphQLError(str(e)) from e
         except Exception as e:
+            logger.exception("recommend_checkups failed")
             raise GraphQLError(f"Recommendations failed: {e}") from e

@@ -46,6 +46,7 @@ export const en = {
   saveSchedule: 'Save changes',
   scheduleDetails: 'Schedule details',
   testItem: 'Test item',
+  testItemPickSuggestion: 'Select a suggestion…',
   addVisit: 'Add visit / result',
   visitDate: 'Visit date',
   clinicLabel: 'Clinic or facility',
@@ -71,15 +72,10 @@ export const en = {
   aiGetSuggestions: 'Get suggestions',
   aiSuggestionsLoading: 'Fetching suggestions…',
   aiSuggestionsError: 'Could not load suggestions.',
+  aiSuggestSuccess: 'Received {{count}} suggestion(s).',
+  aiSelectUserForSuggestions: 'Select a user above before loading suggestions.',
   aiNoSuggestions: 'No rows returned.',
-  aiSelectAll: 'Select all',
-  aiSelectNone: 'Select none',
-  aiAddSelected: 'Add selected to schedule',
-  aiAddedSchedules: 'Schedules created from your selection.',
-  aiTableName: 'Check-up',
-  aiTableFrequency: 'Frequency',
-  aiTableDays: 'Days',
-  aiTableNote: 'Note',
+  aiUseTestItemBelow: 'Choose a check-up in “Test item” below; frequency fills from the suggestion.',
 } as const;
 
 export type MessageKey = keyof typeof en;

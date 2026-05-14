@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import date
@@ -10,6 +11,8 @@ from typing import Any, List, Optional
 
 from Model.user import User
 from schema import Gender, ScreeningRecommendationType
+
+logger = logging.getLogger("kenshin.gemini")
 
 
 def compute_age(birthday: date, today: date) -> int:
@@ -96,37 +99,60 @@ async def fetch_recommendations_for_user(
 ) -> List[ScreeningRecommendationType]:
     api_key = os.getenv("GEMINI_API_KEY", "").strip()
     if not api_key:
+        logger.warning("fetch_recommendations_for_user: GEMINI_API_KEY missing")
         raise RuntimeError("GEMINI_API_KEY is not configured")
 
     try:
         import google.generativeai as genai
     except ImportError as e:
+        logger.warning("fetch_recommendations_for_user: google-generativeai not installed")
         raise RuntimeError("google-generativeai is not installed") from e
 
     today = date.today()
     age = compute_age(user.birthday, today)
     loc = (location_override or "").strip() or None
+    loc_preview = (loc[:48] + "…") if loc and len(loc) > 48 else (loc or "")
+    logger.info(
+        "Gemini request start user_id=%s age=%s location_len=%s location_preview=%r",
+        getattr(user, "id", "?"),
+        age,
+        len(loc or ""),
+        loc_preview,
+    )
     prompt = build_prompt(user, loc, age)
 
     genai.configure(api_key=api_key)
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
     model = genai.GenerativeModel(model_name)
 
-    response = model.generate_content(
-        prompt,
-        generation_config={
-            "temperature": 0.35,
-            "response_mime_type": "application/json",
-        },
-    )
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.35,
+                "response_mime_type": "application/json",
+            },
+        )
+    except Exception:
+        logger.exception("Gemini generate_content failed model=%r", model_name)
+        raise
+
     raw = (response.text or "").strip()
+    logger.info("Gemini raw response length=%s", len(raw))
     if not raw:
+        logger.warning("Gemini returned empty text model=%r", model_name)
         raise RuntimeError("Empty response from Gemini")
 
     raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
     raw = re.sub(r"\s*```$", "", raw)
 
-    rows = parse_recommendations_json(raw)
+    try:
+        rows = parse_recommendations_json(raw)
+    except Exception:
+        logger.warning("Gemini JSON parse failed raw_prefix=%r", raw[:500])
+        raise
+
+    logger.info("Gemini parsed recommendations count=%s", len(rows))
     return [
         ScreeningRecommendationType(
             name=r["name"],

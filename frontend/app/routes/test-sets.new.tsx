@@ -8,6 +8,12 @@ import { t, type Locale } from '../i18n';
 
 export const meta: MetaFunction = () => [{ title: 'Add checkup | Kenshin' }];
 
+/** Schedule form: same vertical/horizontal padding and type scale as Test item. */
+const scheduleFieldClass =
+  'mt-1 block w-full rounded-md border border-gray-300 bg-white py-2 pl-3 text-base shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500';
+const scheduleSelectClass = `${scheduleFieldClass} pr-10`;
+const scheduleInputClass = `${scheduleFieldClass} pr-3`;
+
 interface Me {
   id: number;
   role: string;
@@ -109,6 +115,8 @@ export async function action({ request }: ActionFunctionArgs) {
       forUserRaw != null && String(forUserRaw).trim() !== '' && Number.isFinite(Number(forUserRaw))
         ? Number(forUserRaw)
         : null;
+    // Logs the Remix server process (not the FastAPI Docker container).
+    console.info('[kenshin] recommendCheckups action', { forUserId, locationLen: (loc ?? '').length });
     const variables: Record<string, unknown> = { loc, forUserId };
     const query = `
       query Rec($loc: String, $forUserId: Int) {
@@ -122,6 +130,7 @@ export async function action({ request }: ActionFunctionArgs) {
     `;
     try {
       const data = await gqlRequest<{ recommendCheckups: RecommendationRow[] }>(query, variables, token);
+      console.info('[kenshin] recommendCheckups GraphQL ok', { count: data.recommendCheckups.length });
       return json({ intent: 'recommend', ok: true as const, rows: data.recommendCheckups } satisfies RecommendActionData);
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Request failed';
@@ -129,37 +138,82 @@ export async function action({ request }: ActionFunctionArgs) {
     }
   }
 
-  if (intent === 'applyRecommendations') {
-    const userId = Number(form.get('userId'));
+  const userId = Number(form.get('userId'));
+  const frequency = Number(form.get('frequency'));
+  const nextDate = String(form.get('nextDate'));
+  const reminderLeadDays = Number(form.get('reminderLeadDays') || 14);
+
+  const recRowRaw = String(form.get('recommendationRow') ?? '').trim();
+  if (recRowRaw) {
+    let row: {
+      name: string;
+      intervalDays?: number;
+      interval_days?: number;
+      frequencyText?: string | null;
+      rationale?: string | null;
+    };
+    try {
+      row = JSON.parse(recRowRaw);
+    } catch {
+      return json({ error: 'Invalid suggestion payload' }, { status: 400 });
+    }
     if (!Number.isFinite(userId) || userId < 1) {
       return json({ error: 'Invalid user' }, { status: 400 });
     }
-    const rowsRaw = String(form.get('rows') ?? '[]');
-    let rows: { name: string; intervalDays: number; frequencyText?: string | null; whereGuidanceEn?: string | null }[];
-    try {
-      rows = JSON.parse(rowsRaw);
-    } catch {
-      return json({ error: 'Invalid selection payload' }, { status: 400 });
+    if (!Number.isFinite(frequency) || frequency < 1) {
+      return json({ error: 'Invalid frequency' }, { status: 400 });
     }
-    if (!Array.isArray(rows) || rows.length === 0) {
-      return json({ error: 'Select at least one suggestion' }, { status: 400 });
+    const name = String(row.name ?? '').trim();
+    if (!name) {
+      return json({ error: 'Invalid suggestion name' }, { status: 400 });
     }
-    const mutation = `
-      mutation Apply($userId: Int!, $rows: [RecommendationApplyInput!]!) {
-        applyRecommendations(userId: $userId, rows: $rows) {
+    const where =
+      (row.rationale != null && String(row.rationale).trim()) ||
+      (row.frequencyText != null && String(row.frequencyText).trim()) ||
+      null;
+    const createPersonal = `
+      mutation CreatePersonal($name: String!, $defaultFrequency: Int!, $whereGuidanceEn: String) {
+        createPersonalItem(name: $name, defaultFrequency: $defaultFrequency, whereGuidanceEn: $whereGuidanceEn) {
           id
         }
       }
     `;
-    await gqlRequest(mutation, { userId, rows }, token);
+    const itemRes = await gqlRequest<{ createPersonalItem: { id: number } }>(
+      createPersonal,
+      {
+        name,
+        defaultFrequency: frequency,
+        whereGuidanceEn: where,
+      },
+      token
+    );
+    const mutation = `
+      mutation CreateTestSet($testSetData: TestSetInput!) {
+        createTestSet(testSetData: $testSetData) {
+          id
+        }
+      }
+    `;
+    await gqlRequest(
+      mutation,
+      {
+        testSetData: {
+          userId,
+          itemId: itemRes.createPersonalItem.id,
+          frequency,
+          nextDate,
+          reminderLeadDays,
+        },
+      },
+      token
+    );
     return redirect('/');
   }
 
-  const userId = Number(form.get('userId'));
   const itemId = Number(form.get('itemId'));
-  const frequency = Number(form.get('frequency'));
-  const nextDate = String(form.get('nextDate'));
-  const reminderLeadDays = Number(form.get('reminderLeadDays') || 14);
+  if (!Number.isFinite(itemId) || itemId < 1) {
+    return json({ error: 'Select a catalog test item' }, { status: 400 });
+  }
 
   const mutation = `
     mutation CreateTestSet($testSetData: TestSetInput!) {
@@ -199,10 +253,19 @@ export default function NewTestSet() {
     me?.role === 'ADMIN' ? '' : String(me?.id ?? '')
   );
   const [aiLocation, setAiLocation] = useState(me?.location ?? '');
-  const [selectedAiRows, setSelectedAiRows] = useState<Record<number, boolean>>({});
+  const [recommendGateError, setRecommendGateError] = useState<string | null>(null);
+  const [frequencyDays, setFrequencyDays] = useState<number | ''>(() => {
+    if (typeof suggestedDays === 'number' && suggestedDays > 0) return suggestedDays;
+    if (itemPreview) {
+      const it = getAllItems.find((i) => String(i.id) === String(itemPreview));
+      return it?.defaultFrequency ?? '';
+    }
+    return '';
+  });
 
   useEffect(() => {
     if (!me || !selectedItem) return;
+    if (!/^\d+$/.test(selectedItem)) return;
     let url = `/test-sets/new?itemPreview=${encodeURIComponent(selectedItem)}`;
     if (me.role === 'ADMIN' && adminTargetUserId.trim() !== '') {
       url += `&userPreview=${encodeURIComponent(adminTargetUserId)}`;
@@ -217,13 +280,26 @@ export default function NewTestSet() {
   }, [aiFetcher.data]);
 
   useEffect(() => {
-    if (!recommendRows) return;
-    const next: Record<number, boolean> = {};
-    recommendRows.forEach((_, i) => {
-      next[i] = true;
-    });
-    setSelectedAiRows(next);
-  }, [recommendRows]);
+    if (aiFetcher.data?.intent !== 'recommend' || !aiFetcher.data.ok) return;
+    if (!aiFetcher.data.rows.length) return;
+    setSelectedItem('');
+    setFrequencyDays('');
+  }, [aiFetcher.data]);
+
+  useEffect(() => {
+    if (!selectedItem || !/^\d+$/.test(selectedItem)) return;
+    const s = previewFetcher.data?.suggestedDays;
+    if (typeof s === 'number' && s > 0) setFrequencyDays(s);
+  }, [selectedItem, previewFetcher.data?.suggestedDays]);
+
+  const selectedRecommendationJson = useMemo(() => {
+    if (!recommendRows?.length || !selectedItem.startsWith('rec:')) return '';
+    const i = Number(selectedItem.slice(4));
+    const r = recommendRows[i];
+    return r ? JSON.stringify(r) : '';
+  }, [recommendRows, selectedItem]);
+
+  const usingAiItems = !!(recommendRows && recommendRows.length > 0);
 
   if (!me) {
     return null;
@@ -237,35 +313,18 @@ export default function NewTestSet() {
     me.role === 'ADMIN' ? (adminTargetUserId.trim() !== '' ? adminTargetUserId : '') : String(me.id);
 
   const requestRecommendations = () => {
+    setRecommendGateError(null);
+    if (me.role === 'ADMIN' && (!adminTargetUserId.trim() || Number(adminTargetUserId) < 1)) {
+      setRecommendGateError(t(locale, 'aiSelectUserForSuggestions'));
+      return;
+    }
     const fd = new FormData();
     fd.set('_intent', 'recommend');
     fd.set('aiLocation', aiLocation);
     if (me.role === 'ADMIN' && scheduleUserId) {
       fd.set('forUserId', scheduleUserId);
     }
-    aiFetcher.submit(fd, { method: 'post' });
-  };
-
-  const applySelectedRecommendations = () => {
-    if (!recommendRows || !scheduleUserId) return;
-    const rows = recommendRows
-      .map((r, i) =>
-        selectedAiRows[i]
-          ? {
-              name: r.name,
-              intervalDays: r.intervalDays,
-              frequencyText: r.frequencyText,
-              whereGuidanceEn: r.rationale ?? null,
-            }
-          : null
-      )
-      .filter((x): x is NonNullable<typeof x> => x != null);
-    if (rows.length === 0) return;
-    const fd = new FormData();
-    fd.set('_intent', 'applyRecommendations');
-    fd.set('userId', scheduleUserId);
-    fd.set('rows', JSON.stringify(rows));
-    aiFetcher.submit(fd, { method: 'post' });
+    aiFetcher.submit(fd, { method: 'post', action: '/test-sets/new' });
   };
 
   return (
@@ -291,7 +350,7 @@ export default function NewTestSet() {
                 id="aiForUser"
                 value={adminTargetUserId}
                 onChange={(e) => setAdminTargetUserId(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                className={scheduleSelectClass}
               >
                 <option value="">Select a user</option>
                 {getAllUsers?.map((u) => (
@@ -318,95 +377,30 @@ export default function NewTestSet() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
-              disabled={
-                aiBusy || (me.role === 'ADMIN' && (!adminTargetUserId || Number(adminTargetUserId) < 1))
-              }
+              disabled={aiBusy}
               onClick={requestRecommendations}
               className="rounded-md bg-amber-700 px-4 py-2 text-sm font-medium text-white shadow hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {aiBusy ? t(locale, 'aiSuggestionsLoading') : t(locale, 'aiGetSuggestions')}
             </button>
+            {recommendGateError ? <span className="text-sm text-red-700">{recommendGateError}</span> : null}
             {aiFetcher.data?.intent === 'recommend' && !aiFetcher.data.ok ? (
               <span className="text-sm text-red-700">{aiFetcher.data.error}</span>
             ) : null}
           </div>
+          {me.role === 'ADMIN' && !adminTargetUserId ? (
+            <p className="text-sm text-amber-900">{t(locale, 'aiSelectUserForSuggestions')}</p>
+          ) : null}
+          {aiFetcher.data?.intent === 'recommend' && aiFetcher.data.ok && recommendRows && recommendRows.length > 0 ? (
+            <p className="text-sm text-green-800">{t(locale, 'aiSuggestSuccess', { count: recommendRows.length })}</p>
+          ) : null}
+          {aiFetcher.data?.intent === 'recommend' && aiFetcher.data.ok && recommendRows?.length === 0 ? (
+            <p className="mt-2 text-sm text-gray-600">{t(locale, 'aiNoSuggestions')}</p>
+          ) : null}
+          {usingAiItems ? (
+            <p className="text-sm text-amber-900">{t(locale, 'aiUseTestItemBelow')}</p>
+          ) : null}
         </div>
-
-        {recommendRows && recommendRows.length > 0 ? (
-          <div className="mt-6 overflow-x-auto rounded-md border border-amber-200 bg-white">
-            <div className="flex flex-wrap gap-2 border-b border-amber-100 px-3 py-2">
-              <button
-                type="button"
-                className="text-xs font-medium text-amber-900 underline"
-                onClick={() => {
-                  const next: Record<number, boolean> = {};
-                  recommendRows.forEach((_, i) => {
-                    next[i] = true;
-                  });
-                  setSelectedAiRows(next);
-                }}
-              >
-                {t(locale, 'aiSelectAll')}
-              </button>
-              <button
-                type="button"
-                className="text-xs font-medium text-amber-900 underline"
-                onClick={() => {
-                  const next: Record<number, boolean> = {};
-                  recommendRows.forEach((_, i) => {
-                    next[i] = false;
-                  });
-                  setSelectedAiRows(next);
-                }}
-              >
-                {t(locale, 'aiSelectNone')}
-              </button>
-            </div>
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-10 px-3 py-2 text-left font-medium text-gray-700" />
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">{t(locale, 'aiTableName')}</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">{t(locale, 'aiTableFrequency')}</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">{t(locale, 'aiTableDays')}</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-700">{t(locale, 'aiTableNote')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 bg-white">
-                {recommendRows.map((r, i) => (
-                  <tr key={`${r.name}-${i}`}>
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={!!selectedAiRows[i]}
-                        onChange={(e) => setSelectedAiRows((prev) => ({ ...prev, [i]: e.target.checked }))}
-                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                    </td>
-                    <td className="px-3 py-2 font-medium text-gray-900">{r.name}</td>
-                    <td className="px-3 py-2 text-gray-700">{r.frequencyText}</td>
-                    <td className="px-3 py-2 text-gray-600">{r.intervalDays}</td>
-                    <td className="max-w-xs truncate px-3 py-2 text-gray-500" title={r.rationale ?? ''}>
-                      {r.rationale ?? '—'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="flex justify-end border-t border-amber-100 px-3 py-3">
-              <button
-                type="button"
-                disabled={aiBusy || !scheduleUserId}
-                onClick={applySelectedRecommendations}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-indigo-700 disabled:opacity-60"
-              >
-                {t(locale, 'aiAddSelected')}
-              </button>
-            </div>
-          </div>
-        ) : aiFetcher.data?.intent === 'recommend' && aiFetcher.data.ok && recommendRows?.length === 0 ? (
-          <p className="mt-4 text-sm text-gray-600">{t(locale, 'aiNoSuggestions')}</p>
-        ) : null}
       </section>
 
       <div className="mt-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
@@ -424,7 +418,7 @@ export default function NewTestSet() {
                 required
                 value={adminTargetUserId}
                 onChange={(e) => setAdminTargetUserId(e.target.value)}
-                className="mt-1 block w-full rounded-md border border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+                className={scheduleSelectClass}
               >
                 <option value="">Select a user</option>
                 {getAllUsers?.map((user) => (
@@ -447,17 +441,36 @@ export default function NewTestSet() {
               name="itemId"
               required
               value={selectedItem}
-              onChange={(e) => setSelectedItem(e.target.value)}
-              className="mt-1 block w-full rounded-md border border-gray-300 py-2 pl-3 pr-10 text-base focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
+              onChange={(e) => {
+                const v = e.target.value;
+                setSelectedItem(v);
+                if (v.startsWith('rec:')) {
+                  const idx = Number(v.slice(4));
+                  if (recommendRows?.[idx]) setFrequencyDays(recommendRows[idx].intervalDays);
+                } else if (/^\d+$/.test(v)) {
+                  const item = getAllItems.find((x) => String(x.id) === v);
+                  setFrequencyDays(item?.defaultFrequency ?? '');
+                } else {
+                  setFrequencyDays('');
+                }
+              }}
+              className={scheduleSelectClass}
             >
-              <option value="">{t(locale, 'testItem')}</option>
-              {getAllItems.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} (default {item.defaultFrequency} days)
-                </option>
-              ))}
+              <option value="">{usingAiItems ? t(locale, 'testItemPickSuggestion') : t(locale, 'testItem')}</option>
+              {usingAiItems
+                ? recommendRows!.map((r, i) => (
+                    <option key={`rec-${i}-${r.name}`} value={`rec:${i}`}>
+                      {r.name}
+                    </option>
+                  ))
+                : getAllItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name} (default {item.defaultFrequency} days)
+                    </option>
+                  ))}
             </select>
-            {suggested != null && selectedItem ? (
+            {selectedRecommendationJson ? <input type="hidden" name="recommendationRow" value={selectedRecommendationJson} /> : null}
+            {!usingAiItems && suggested != null && /^\d+$/.test(selectedItem) ? (
               <p className="mt-2 text-sm text-indigo-700">
                 Guideline suggestion for your profile: every <strong>{suggested}</strong> days (you can override
                 below).
@@ -475,11 +488,13 @@ export default function NewTestSet() {
               name="frequency"
               required
               min={1}
-              key={`${selectedItem}-${suggested ?? 'x'}`}
-              defaultValue={
-                suggested ?? getAllItems.find((i) => String(i.id) === selectedItem)?.defaultFrequency ?? ''
-              }
-              className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              value={frequencyDays === '' ? '' : frequencyDays}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === '') setFrequencyDays('');
+                else setFrequencyDays(Number(raw));
+              }}
+              className={scheduleInputClass}
             />
           </div>
 
@@ -492,7 +507,7 @@ export default function NewTestSet() {
               id="nextDate"
               name="nextDate"
               required
-              className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              className={scheduleInputClass}
             />
           </div>
 
@@ -506,7 +521,7 @@ export default function NewTestSet() {
               name="reminderLeadDays"
               min={1}
               defaultValue={14}
-              className="mt-1 block w-full rounded-md border border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+              className={scheduleInputClass}
             />
           </div>
 
